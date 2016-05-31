@@ -22,12 +22,14 @@ module Spree
 
     # <g:google_product_category> Apparel & Accessories > Clothing > Dresses (From Google Taxon Map)
     def google_merchant_product_category
-      self.first_property(:gm_product_category) || Spree::GoogleMerchant::Config[:product_category]
+      # self.first_property(:gm_product_category) || Spree::GoogleMerchant::Config[:product_category]
+      self.gm_product_category
     end
 
-    def google_merchant_product_type
+    def google_merchant_product_type     
       return unless taxons.any?
-      taxons[0].self_and_ancestors.map(&:name).join(" > ")
+      # TODO: fix this; right now it only takes the 1st taxon, and ignores the rest
+      taxons.last.self_and_ancestors.map(&:name).join(" > ")
     end
 
     # <g:condition> new | used | refurbished
@@ -37,23 +39,26 @@ module Spree
 
     # <g:availability> in stock | available for order | out of stock | preorder
     def google_merchant_availability
-      self.master.stock_items.sum(:count_on_hand) > 0 ? 'in stock' : 'out of stock'
+      # self.master.stock_items.sum(:count_on_hand) > 0 ? 'in stock' : 'out of stock'
+      'in stock'
     end
 
     def google_merchant_quantity
       self.master.stock_items.sum(:count_on_hand)
     end
 
-    def google_merchant_image_link
-      self.max_image_url
+    def google_merchant_image_link   
+      self.image.attachment.url.gsub(/\?+[0-9]+/i, '')
     end
 
     def google_merchant_brand
-      self.first_property(:brand)
+      # self.first_property(:brand)
+      self.property("Brand")
     end
 
     # <g:price> 15.00 USD
     def google_merchant_price
+      # If current store is UK/AU      
       format("%.2f %s", self.price, self.currency).to_s
     end
 
@@ -77,12 +82,12 @@ module Spree
 
     # <g:gtin> 8-, 12-, or 13-digit number (UPC, EAN, JAN, or ISBN)
     def google_merchant_gtin
-      self.master.gtin rescue self.upc
+      self.master.gtin rescue self.property("UPC")
     end
 
     # <g:mpn> Alphanumeric characters
     def google_merchant_mpn
-      self.sku.gsub(/[^0-9a-z ]/i, '')
+      self.property("MPN").gsub(/[^0-9a-z ]/i, '')
     end
 
     # <g:gender> Male, Female, Unisex

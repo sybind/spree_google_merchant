@@ -25,7 +25,7 @@ module SpreeGoogleMerchant
     end
 
     def self.builders
-      if defined?(Spree::Store)
+      if defined?(Spree::Store)    	
         Spree::Store.all.map{ |store| self.new(:store => store) }
       else
         [self.new]
@@ -37,19 +37,19 @@ module SpreeGoogleMerchant
           opts[:store].present? or (opts[:path].present? or Spree::GoogleMerchant::Config[:public_domain])
 
       @store = opts[:store] if opts[:store].present?
+     
       @title = @store ? @store.name : Spree::GoogleMerchant::Config[:store_name]
 
-      @domain = @store ? @store.domains.match(/[\w\.]+/).to_s : opts[:path]
+      @domain = @store ? @store.url.match(/[\w\.]+/).to_s : opts[:path]
       @domain ||= Spree::GoogleMerchant::Config[:public_domain]
     end
 
     def ads
-      Spree::ProductAd.active.includes([:channel, :variant => [:product => :translations]]).where("spree_product_ad_channels.channel_type = 'google_shopping'")
+      Spree::ProductAd.active.joins([:channel, :variant => [:product]]).where("spree_product_ad_channels.channel_type = 'google_shopping'")
     end
 
     def generate_store
       delete_xml_if_exists
-
       File.open(path, 'w') do |file|
         generate_xml file
       end
@@ -68,7 +68,8 @@ module SpreeGoogleMerchant
     end
 
     def path
-      "#{::Rails.root}/tmp/#{filename}"
+      # "#{::Rails.root}/tmp/#{filename}"
+      "#{::Rails.root}/public/#{filename}"
     end
 
     def filename
@@ -90,7 +91,7 @@ module SpreeGoogleMerchant
       return false if product.google_merchant_gtin.nil?
       return false if product.google_merchant_mpn.nil?
       return false if product.respond_to?(:discontinued?) && product.discontinued? && self.master.stock_items.sum(:count_on_hand) <= 0
-      return false unless validate_upc(product.upc)
+      return false unless validate_upc(product.property("UPC"))
 
       unless product.google_merchant_sale_price.nil?
         return false if product.google_merchant_sale_price_effective.nil?
@@ -105,9 +106,8 @@ module SpreeGoogleMerchant
 
       xml.rss(:version => '2.0', :"xmlns:g" => "http://base.google.com/ns/1.0") do
         xml.channel do
-          build_meta(xml)
-
-          ads.find_each(:batch_size => 1000) do |ad|
+          build_meta(xml)       
+          ads.find_each(:batch_size => 1000) do |ad|                          	
             next unless ad && ad.variant && ad.variant.product && validate_record(ad)
             build_feed_item(xml, ad)
           end
@@ -133,33 +133,40 @@ module SpreeGoogleMerchant
     def build_feed_item(xml, ad)
       product = ad.variant.product
       xml.item do
-        xml.tag!('link', product_url(product.permalink, :host => domain))
-        build_images(xml, product)
 
+        xml.tag!('link', product_url(product.slug, :host => domain))
+        build_images(xml, product)
+   
         GOOGLE_MERCHANT_ATTR_MAP.each do |k, v|
+# binding.pry
+# puts "k|#{k}|"      	
           value = product.send("google_merchant_#{v}")
           xml.tag!(k, value.to_s) if value.present?
         end
-        build_shipping(xml, ad)
-        build_adwords_labels(xml, ad)
-        build_custom_labels(xml, ad)
+        # Dont need this because shipping is included. save for later
+        # build_shipping(xml, ad)
+        # build_adwords_labels(xml, ad)
+        # build_custom_labels(xml, ad)
+        # build_category_custom_labels(xml, ad)
       end
     end
 
     def build_images(xml, product)
       main_image, *more_images = product.master.images
 
-      return unless main_image
-      xml.tag!('g:image_link', image_url(main_image).sub(/\?.*$/, '').sub(/^\/\//, 'http://'))
+      return unless main_image    
+      xml.tag!('g:image_link', image_url(main_image).sub(/\?.*$/, '').sub(/^/, 'http://'))
 
       more_images.each do |image|
-        xml.tag!('g:additional_image_link', image_url(image).sub(/\?.*$/, '').sub(/^\/\//, 'http://'))
+        xml.tag!('g:additional_image_link', image_url(image).sub(/\?.*$/, '').sub(/^/, 'http://'))
       end
     end
 
-    def image_url image
+    def image_url image  	
       base_url = image.attachment.url(:large)
-      base_url = "#{domain}/#{base_url}" unless Spree::Config[:use_s3]
+
+      # base_url = "#{domain}/#{base_url}" unless Spree::Config[:use_s3]
+      base_url = "#{domain}#{base_url}"
 
       base_url
     end
@@ -178,7 +185,7 @@ module SpreeGoogleMerchant
 
     # <g:shipping>
     def build_shipping(xml, ad)
-      product = ad.variant.product
+      product = ad.variant.product   
       if !product.master.fulfillment_cost.nil? && product.master.fulfillment_cost > 0
         xml.tag!('g:shipping') do
           xml.tag!('g:country', "US")
@@ -217,7 +224,9 @@ module SpreeGoogleMerchant
       product = ad.variant.product
 
       # Set availability
-      xml.tag!('g:custom_label_0', product.google_merchant_availability)
+      # xml.tag!('g:custom_label_0', product.google_merchant_availability)
+      # Always in stock
+      xml.tag!('g:custom_label_0', 'In Stock')
 
       # Set CPC
       channel = ad.channel
@@ -232,7 +241,26 @@ module SpreeGoogleMerchant
       xml.tag!('g:custom_label_1', '%.2f' % max_cpc) if max_cpc
     end
 
-    def build_meta(xml)
+    def build_category_custom_labels(xml, ad)
+    #WORK IN PROGRESS
+      product = ad.variant.product
+
+      # xml.tag!('g:custom_label_0', 'In Stock')
+
+      # # Set CPC
+      # channel = ad.channel
+      # max_cpc = nil
+      # if ad.max_cpc
+      #   max_cpc = ad.max_cpc
+      # elsif ad.variant && ad.variant.max_cpc
+      #   max_cpc = ad.variant.max_cpc / 0.65
+      # elsif channel && channel.default_max_cpc
+      #   max_cpc = channel.default_max_cpc
+      # end
+      # xml.tag!('g:custom_label_1', '%.2f' % max_cpc) if max_cpc
+    end
+
+    def build_meta(xml)  	
       xml.title @title
       xml.link @domain
     end
