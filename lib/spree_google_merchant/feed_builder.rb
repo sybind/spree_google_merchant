@@ -82,11 +82,12 @@ module SpreeGoogleMerchant
 
     def validate_record(ad)
       product = ad.variant.product
+      currency = @store.try(:default_currency)
       return false if product.images.length == 0 && product.imagesize == 0 rescue true
       return false if product.google_merchant_title.nil?
       return false if product.google_merchant_product_category.nil?
-      return false if product.google_merchant_availability.nil?
-      return false if product.google_merchant_price.nil?
+      return false if product.google_merchant_availability.nil?     
+      return false if product.google_merchant_price(currency).nil?
       return false if product.google_merchant_brand.nil?
       return false if product.google_merchant_gtin.nil?
       return false if product.google_merchant_mpn.nil?
@@ -138,10 +139,16 @@ module SpreeGoogleMerchant
         build_images(xml, product)
    
         GOOGLE_MERCHANT_ATTR_MAP.each do |k, v|
-# binding.pry
-# puts "k|#{k}|"      	
+
+        if v == "price" then
+          currency = @store.try(:default_currency)
+          value = product.google_merchant_price(currency)
+          xml.tag!(k, value.to_s) if value.present?
+        else     	
           value = product.send("google_merchant_#{v}")
           xml.tag!(k, value.to_s) if value.present?
+        end
+                   
         end
         # Dont need this because shipping is included. save for later
         # build_shipping(xml, ad)
@@ -189,7 +196,7 @@ module SpreeGoogleMerchant
       if !product.master.fulfillment_cost.nil? && product.master.fulfillment_cost > 0
         xml.tag!('g:shipping') do
           xml.tag!('g:country', "US")
-          xml.tag!('g:service', "Ground")
+          xml.tag!('g:service', "Ground")          
           xml.tag!('g:price', product.master.fulfillment_cost.to_f)
         end
       end
