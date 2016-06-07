@@ -57,9 +57,8 @@ module Spree
     end
 
     # <g:price> 15.00 USD
-    def google_merchant_price
-      # If current store is UK/AU      
-      format("%.2f %s", self.price, self.currency).to_s
+    def google_merchant_price(currency)     
+      format("%.2f %s", self.price_in(currency).amount.to_f, currency).to_s
     end
 
     # <g:sale_price> 15.00 USD
