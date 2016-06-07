@@ -149,6 +149,9 @@ module SpreeGoogleMerchant
           xml.tag!(k, value.to_s) if value.present?
         end
                    
+        end     	
+          value = product.send("google_merchant_#{v}")
+          xml.tag!(k, value.to_s) if value.present?
         end
         # Dont need this because shipping is included. save for later
         # build_shipping(xml, ad)

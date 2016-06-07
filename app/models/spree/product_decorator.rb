@@ -1,8 +1,8 @@
 module Spree
   Product.class_eval do
-    scope :google_merchant_scope, includes(:taxons, {:master => :images}).includes(:product_properties)
-    scope :amazon_ads, joins([{:product_properties => :property}, {:master => :stock_items}]).where("not (spree_properties.name = 'brand' and spree_product_properties.value = 'Loftus') and spree_stock_items.count_on_hand <> 0").where("imagesize >= 500").includes(:taxons, {:master => [:images, :stock_items]}).includes(:product_properties).group(:id)
-    scope :ebay_ads, joins([{:product_properties => :property}, {:master => :stock_items}]).where("spree_stock_items.count_on_hand <> 0").where("imagesize >= 300").includes(:taxons, {:master => [:images, :stock_items]}).includes(:product_properties).group(:id)
+    scope :google_merchant_scope, -> {includes(:taxons, {:master => :images}).includes(:product_properties)}
+    scope :amazon_ads, -> {joins([{:product_properties => :property}, {:master => :stock_items}]).where("not (spree_properties.name = 'brand' and spree_product_properties.value = 'Loftus') and spree_stock_items.count_on_hand <> 0").where("spree_variants.image_size >= 500").includes(:taxons, {:master => [:images, :stock_items]}).includes(:product_properties).group(:id)}
+    scope :ebay_ads, -> {joins([{:product_properties => :property}, {:master => :stock_items}]).where("spree_stock_items.count_on_hand <> 0").where("spree_variants.image_size >= 300").includes(:taxons, {:master => [:images, :stock_items]}).includes(:product_properties).group(:id)}
 
     def first_property(property_name)
       value = self.property(property_name)
@@ -133,6 +133,34 @@ module Spree
       return unless self.weight.present?
       weight_units = 'oz'       # need a configuration parameter here
       format("%s %s", self.weight, weight_units)
+    end
+    
+    def google_merchant_shipping_cost
+      use_fulfiller_fulfillment_cost? ? fulfiller_fulfillment_cost : master.fulfillment_cost
+    end
+    
+    def use_fulfiller_fulfillment_cost?
+      fulfillment_extension && fulfiller_stock_items.any? && fulfiller_stock_items.first.count_on_hand > 0
+    end
+    
+    def fulfillment_extension
+      (defined? Spree::FulfillmentConfig).nil? ? nil : Spree::FulfillmentConfig
+    end
+    
+    def fulfiller_stock_items
+      master.stock_items.select{|stock_item|fulfillment_stock_location_ids.include?(stock_item.stock_location.id)}
+    end
+    
+    def fulfillment_stock_location_ids
+      [fulfillment_extension.preferred_amazon_stock_location_id]
+    end
+    
+    def fulfiller_fulfillment_cost
+      cost_calculator.fulfillment_cost(master)
+    end
+    
+    def cost_calculator
+      @cost_calculator ||= Spree::Fulfillment::Providers::Amazon::VariantCostCalculator.new
     end
 
     # <g:adult> TRUE | FALSE
