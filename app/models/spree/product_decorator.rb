@@ -13,7 +13,7 @@ module Spree
     end
 
     def google_merchant_description
-      self.description
+      self.gm_product_feed_desc
     end
 
     def google_merchant_title
